@@ -51,7 +51,7 @@ static struct TS3Functions ts3Functions;
 
 //Global Variables
 static char* pluginID = NULL;
-static const char* APPLICATION_ID = "423507208165392388";
+static const char* APPLICATION_ID = "450824928841957386"; // 450824928841957386
 static int64_t StartTime;
 
 #ifdef _WIN32
@@ -160,6 +160,8 @@ static void discordInit()
 	Discord_Initialize(APPLICATION_ID, &handlers, 1, NULL);
 }
 
+DiscordRichPresence discordPresence;
+
 static void updateDiscordPresence()
 {
 	static bool needsClear = false;
@@ -179,30 +181,36 @@ static void updateDiscordPresence()
 		uint64 mChannelID = 0;
 		ts3Functions.getChannelOfClient(serverConnectionHandlerID, mClientID, &mChannelID);
 
-		DiscordRichPresence discordPresence;
 		memset(&discordPresence, 0, sizeof(discordPresence));
 
 		char* cBuffer = new char[CHANNELINFO_BUFSIZE];
-		std::string buffer;
 
 		ts3Functions.getChannelVariableAsString(serverConnectionHandlerID, mChannelID, ChannelProperties::CHANNEL_NAME, &cBuffer);
 		discordPresence.state = cBuffer; //channelname ex: Dj's Kotstube
 		
 		ts3Functions.getServerVariableAsString(serverConnectionHandlerID, VIRTUALSERVER_NAME, &cBuffer);
-		buffer = cBuffer; 
+		std::string buffer;
+		buffer = cBuffer;
 		unsigned short port = 0;
 		char* shit = new char[128];
 		ts3Functions.getServerConnectInfo(serverConnectionHandlerID, cBuffer, &port, shit, 512);
-		buffer += " - " + std::string(cBuffer) + ":" + std::to_string(port);
-		discordPresence.details = buffer.c_str(); //connection: servername/ip; ex: Connected: macoga.de 
+		//buffer += " - " + std::string(cBuffer) + ":" + std::to_string(port);
+		discordPresence.details = buffer.c_str(); //connection: servername/ip; ex: Connected: macoga.de
 		discordPresence.startTimestamp = StartTime;
 		discordPresence.partyId = std::to_string(mChannelID).c_str(); //Channel id
 
 		discordPresence.partySize = getChannelCount(serverConnectionHandlerID, mChannelID); //Channel clients
 		discordPresence.partyMax = getServerCount(serverConnectionHandlerID); //server clients
+		discordPresence.largeImageKey = "logo";
+		char* cBuffer2 = new char[TS3_MAX_SIZE_CLIENT_NICKNAME];
+		ts3Functions.getClientSelfVariableAsString(serverConnectionHandlerID, CLIENT_NICKNAME, &cBuffer2);
+		std::string buffer2;
+		buffer2 = cBuffer2;
+		discordPresence.largeImageText = buffer2.c_str();
 		Discord_UpdatePresence(&discordPresence);
 
 		delete cBuffer;
+		//delete cBuffer2;
 		delete shit;
 	}
 	else 
@@ -222,14 +230,14 @@ const char* ts3plugin_name() {
 #ifdef _WIN32
 	static char* result = NULL;  /* Static variable so it's allocated only once */
 	if (!result) {
-		const wchar_t* name = L"Discord Plugin";
+		const wchar_t* name = L"Discord Rich Presence";
 		if (wcharToUtf8(name, &result) == -1) {  /* Convert name into UTF-8 encoded result */
-			result = "Discord Plugin";  /* Conversion failed, fallback here */
+			result = "Discord Rich Presence";  /* Conversion failed, fallback here */
 		}
 	}
 	return result;
 #else
-	return "Discord Plugin";
+	return "Discord Rich Presence";
 #endif
 }
 
@@ -242,11 +250,11 @@ int ts3plugin_apiVersion() {
 }
 
 const char* ts3plugin_author() {
-	return "Exp";
+	return "Exp, Bluscream";
 }
 
 const char* ts3plugin_description() {
-	return "Connects TeamSpeak to Discord via Rich Presence.";
+	return "Shows your Teamspeak connection on Discord through Rich Presence.";
 }
 
 void ts3plugin_setFunctionPointers(const struct TS3Functions funcs) {
@@ -254,7 +262,7 @@ void ts3plugin_setFunctionPointers(const struct TS3Functions funcs) {
 }
 
 int ts3plugin_init() {
-	char appPath[PATH_BUFSIZE];
+	/*char appPath[PATH_BUFSIZE];
 	char resourcesPath[PATH_BUFSIZE];
 	char configPath[PATH_BUFSIZE];
 	char pluginPath[PATH_BUFSIZE];
@@ -262,7 +270,7 @@ int ts3plugin_init() {
 	ts3Functions.getAppPath(appPath, PATH_BUFSIZE);
 	ts3Functions.getResourcesPath(resourcesPath, PATH_BUFSIZE);
 	ts3Functions.getConfigPath(configPath, PATH_BUFSIZE);
-	ts3Functions.getPluginPath(pluginPath, PATH_BUFSIZE, pluginID);
+	ts3Functions.getPluginPath(pluginPath, PATH_BUFSIZE, pluginID);*/
 
 	StartTime = time(0);
 	discordInit();
@@ -293,7 +301,7 @@ const char* ts3plugin_commandKeyword() {
 }
 
 const char* ts3plugin_infoTitle() {
-	return "Discord Plugin";
+	return "Discord Rich Presence";
 }
 
 void ts3plugin_freeMemory(void* data) {
@@ -375,6 +383,44 @@ void inline shit(uint64 serverConnectionHandlerID, anyID clientID, uint64 oldCha
 	//we're gone || client was in our channel || client is now in our channel
 	if (mClientID == clientID || oldChannelID == mChannelID || newChannelID == mChannelID)
 		updateDiscordPresence();
+}
+
+void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int status, int isReceivedWhisper, anyID clientID) {
+	anyID mClientID = 0;
+	ts3Functions.getClientID(serverConnectionHandlerID, &mClientID);
+	if (clientID != mClientID) return;
+	int isChannelCommander = 0;
+	ts3Functions.getClientSelfVariableAsInt(serverConnectionHandlerID, CLIENT_IS_CHANNEL_COMMANDER, &isChannelCommander);
+	if        (status == 1 && isChannelCommander == 1) {
+		discordPresence.smallImageKey = "player_commander_on";
+		discordPresence.smallImageText = "Talking with Channel Commander";
+	} else if (status == 1 && isChannelCommander == 0) {
+			discordPresence.smallImageKey = "player_on";
+			discordPresence.smallImageText = "Talking";
+	} else if (status == 0 && isChannelCommander == 1) {
+		discordPresence.smallImageKey = "player_commander_off";
+		discordPresence.smallImageText = "Silent with Channel Commander";
+	} else if (status == 0 && isChannelCommander == 0) {
+		discordPresence.smallImageKey = "player_off";
+		discordPresence.smallImageText = "Silent";
+	}
+	Discord_UpdatePresence(&discordPresence);
+}
+char* oldnick = new char[TS3_MAX_SIZE_CLIENT_NICKNAME];
+void ts3plugin_onUpdateClientEvent(uint64 serverConnectionHandlerID, anyID clientID, anyID invokerID, const char* invokerName, const char* invokerUniqueIdentifier) {
+	anyID mClientID = 0;
+	ts3Functions.getClientID(serverConnectionHandlerID, &mClientID);
+	if (clientID != mClientID) return;
+	char* cBuffer2 = new char[TS3_MAX_SIZE_CLIENT_NICKNAME];
+	ts3Functions.getClientSelfVariableAsString(serverConnectionHandlerID, CLIENT_NICKNAME, &cBuffer2);
+	if (!strcmp(oldnick, cBuffer2)) {
+		oldnick = cBuffer2;
+		std::string buffer2;
+		buffer2 = cBuffer2;
+		discordPresence.largeImageText = buffer2.c_str();
+		Discord_UpdatePresence(&discordPresence);
+		delete cBuffer2;
+	}
 }
 
 void ts3plugin_onClientMoveEvent(uint64 serverConnectionHandlerID, anyID clientID, uint64 oldChannelID, uint64 newChannelID, int visibility, const char * moveMessage)
